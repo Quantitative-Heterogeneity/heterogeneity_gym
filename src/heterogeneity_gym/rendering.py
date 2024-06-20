@@ -8,13 +8,44 @@ import equinox as eqx
 from typing import Optional
 from cryojax.image import operators as op
 from cryojax.inference import distributions as dist
+from heterogeneity_gym.pose import apply_poses
 
 
-def _calculate_likelihood(
-    reference_images,
+@eqx.filter_vmap(  # Over structures
+    in_axes=(
+        0,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+)
+@eqx.filter_vmap(  # Over reference images
+    in_axes=(
+        None,
+        None,
+        None,
+        0,
+        0
+        eqx.if_array(0),
+        eqx.if_array(0),
+        eqx.if_array(0),
+        None,
+        None,
+        None,
+    )
+)
+def _calculate_likelihood( # TODO: fix order
     atom_positions,
     atom_identities,
     b_factors,
+    reference_image,
+    poses,
     noise_strength,
     defocus,
     astigmatism,
@@ -22,6 +53,7 @@ def _calculate_likelihood(
     pixel_size,
     voltage,
 ):
+    atom_positions = apply_poses(atom_positions, poses)
     pipeline = build_pipeline(
         atom_positions,
         atom_identities,
@@ -33,12 +65,14 @@ def _calculate_likelihood(
         pixel_size,
         voltage,
     )
+
     distribution = dist.IndependentGaussianFourierModes(
         pipeline,
         variance_function=op.Lorenzian(
             amplitude=noise_strength**2, length_scale=2.0 * pixel_size
         ),
     )
+    return distribution.log_likelihood(reference_image)
 
 
 @eqx.filter_vmap(
@@ -54,7 +88,8 @@ def _calculate_likelihood(
         None,
     )
 )
-def _render_clean_images_from_structures(
+
+def _render_clean_images_from_point_atoms(
     atom_positions,
     atom_identities,
     b_factors,
@@ -96,7 +131,7 @@ def _render_clean_images_from_structures(
         None,
     )
 )
-def _render_noisy_images_from_structures(
+def _render_noisy_images_from_atoms(
     atom_positions,
     atom_identities,
     b_factors,
@@ -125,8 +160,12 @@ def _render_noisy_images_from_structures(
     return distribution.sample(key)
 
 
+# @eqx.filter_jit
+# def _build_atom_
+
+
 @eqx.filter_jit
-def build_pipeline(
+def _build_pipeline(
     atom_positions,
     atom_identities,
     b_factors,
@@ -151,17 +190,12 @@ def build_pipeline(
     )
     instrument_config = cxs.InstrumentConfig(shape, pixel_size, voltage, pad_scale=1.1)
 
-    # # TODO: revisit these parameters
-    # solvent = cxs.GaussianIce(
-    #     variance_function=op.Lorenzian(
-    #         amplitude=noise_strength**2, length_scale=2.0 * pixel_size
-    #     )
-    # )
-
     theory = cxs.WeakPhaseScatteringTheory(
         structural_ensemble, potential_integrator, transfer_theory
     )
     pipeline = cxs.ContrastImagingPipeline(instrument_config, theory)
+
+    # TODO: revisit these parameters
     distribution = dist.IndependentGaussianFourierModes(
         pipeline,
         variance_function=op.Lorenzian(

@@ -1,31 +1,174 @@
 """
 Simple toy example of heterogeneity that attempts to recover images of a 
-rectangle of varying width and height.  Reimplementation of an idea by 
-David Silva Sanchez.
+rectangle of varying width and height.  Initial idea for the example
+David Silva Sanchez.  Code by Erik Thiede and Joshua Rhodes
 """
 
 import torch
+from torch.distributions import MultivariateNormal
 from typing import Tuple, Optional
+import warnings
+
+
+class Latent2DGaussianMixture:
+    """
+    Latent distribution of lengths and widths of four-atom molecule model RectangleModel.
+    """
+
+    def __init__(
+        self,
+        length_width_means: torch.tensor = torch.tensor([0, 0]),
+        length_width_covariances: torch.tensor = torch.tensor([[1, 0], [0, 1]]),
+        length_width_weights: torch.tensor = None,
+    ):
+        """
+        Default construction is a single standard Gaussian.
+
+        Parameters
+        ----------
+        length_width_means : tensor
+            (N, 2) tensor of length, width pairs
+        length_width_stds : tensor
+            (N, 2, 2) tensor of length, width covariance matrices
+        legnth_width_weights : tensor
+            (1, N) tensor of weights (not needed to be normalized)
+        """
+        self.num_gaussians = length_width_means.size(dim=0)
+        self.length_width_means = length_width_means
+        self.length_width_covariances = length_width_covariances
+
+        # If no weights are given, default to uniform weighting.
+        if length_width_weights == None:
+            length_width_weights = torch.ones(self.num_gaussians)
+
+        self.length_width_weights = length_width_weights / torch.sum(
+            length_width_weights
+        )  # Ensure weights are normalized.
+
+    def evaluate_density(self, length_width: torch.tensor) -> float:
+        """
+        Returns value of density at length_width.
+
+        Parameters
+        ----------
+        length_width : tensor
+            (1, 2) tensor of length, width positions in length-width space
+
+        Returns
+        -------
+        density : float
+            pdf evaluated at length_width
+        """
+        gaussians = MultivariateNormal(
+            loc=self.length_width_means, covariance_matrix=self.length_width_covariances
+        )
+        gaussian_densities = torch.exp(gaussians.log_prob(length_width))
+        weighted_gaussians = gaussian_densities * self.length_width_weights
+        return torch.sum(weighted_gaussians, dim=0).item()
+
+    def calculate_num_samples(
+        self, length_width_weights: torch.tensor, N: int
+    ) -> torch.tensor:
+        """
+        Given a set of mixture weights, calculates how many samples to draw
+        from each component for a total of num_samples samples.
+
+        Parameters
+        ----------
+        length_width_weights : torch.tensor
+            Weight of each mixture component
+        N : int
+            Total number of samples to draw
+
+        Returns
+        -------
+        number_samples : torch.tensor[int64]
+            Number of samples to draw from each component,
+            total should sum to N.
+        """
+        cumulative_num_samples = torch.round(
+            torch.cumsum(length_width_weights * N, dim=0)
+        )
+        number_samples = torch.diff(cumulative_num_samples, prepend=torch.tensor([0]))
+        return number_samples.int()
+
+    def sample(self, num_samples: int, shuffle: bool = True) -> torch.tensor:
+        """
+        Returns lengths, widths samples from model.
+
+        Parameters
+        ----------
+        num_samples : int
+            Number of samples
+
+        Returns
+        -------
+        sample : tensor
+            (num_samples, 2) tensor of length, width pairs
+        """
+        sample_frequencies = self.calculate_num_samples(
+            self.length_width_weights, num_samples
+        )
+        sample = torch.empty(
+            0,
+        )
+
+        for gaussian_index, sample_size in enumerate(sample_frequencies):
+            gaussian_model = MultivariateNormal(
+                loc=self.length_width_means[gaussian_index],
+                covariance_matrix=self.length_width_covariances[gaussian_index],
+            )
+            gaussian_sample = gaussian_model.rsample(torch.Size([sample_size]))
+            sample = torch.cat((sample, gaussian_sample), dim=0)
+
+        if shuffle:
+            sample = sample[torch.randperm(len(sample))]
+
+        return sample.reshape(num_samples, 2)
+
 
 # TODO: Reparameterize to use SNR instead of noise_std
-# TODO: Add an assert that checks if atoms have escaped the imaging region.
 # TODO: Type hints and documentation
-# TODO: Initialize reflection tensor in __init__
 
 
 class RectangleModel:
-    def __init__(self, latent_density, image_width_in_pixels=128, noise_std=0.0):
+    def __init__(
+        self,
+        latent_density=None,
+        image_width_in_pixels=128,
+        image_size=4,
+        noise_std=0.0,
+        device="cpu",
+    ):
         """
         TODO: we should construct a "default" latent density.
         TODO: Add initialization to device.  How does OpenAI solve device when creating their "environments"?
         """
+        if latent_density is None:
+            latent_means = torch.tensor([[0.5, 1.5], [1.0, 1.0]])
+            latent_covariances = torch.tensor(
+                [
+                    [[0.1, 0], [0, 0.1]],
+                    [[0.3, 0.1], [0.1, 0.2]],
+                ]
+            )
+            latent_weights = torch.tensor([1, 4])  # Need not be normalized
+            latent_density = Latent2DGaussianMixture(
+                length_width_means=latent_means,
+                length_width_covariances=latent_covariances,
+                length_width_weights=latent_weights,
+            )
+
         self.latent_density = latent_density
 
         # Atom parameters...
         self.atom_variance = 0.04  # standard deviation of 0.2
+        self.image_size = image_size
 
         # Build the imaging grid
-        self.grid_ticks = torch.linspace(-2, 2, image_width_in_pixels + 1)[:-1]
+        self.grid_ticks = torch.linspace(
+            -image_size, image_size, image_width_in_pixels + 1, device=device
+        )[:-1]
         self.grid = torch.stack(
             torch.meshgrid(self.grid_ticks, self.grid_ticks, indexing="xy"), dim=0
         )
@@ -106,6 +249,9 @@ class RectangleModel:
         """ """
         if noise_std is None:
             noise_std = self.noise_std
+
+        if torch.any(torch.abs(structures) > self.image_size):
+            warnings.warn("One of the structures may have escaped the imaging window")
 
         expand_structures = structures[..., None, None]  # N x Atom x 2 x 1 x 1
         sq_displacements = (

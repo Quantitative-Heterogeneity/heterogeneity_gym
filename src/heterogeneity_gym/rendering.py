@@ -8,7 +8,7 @@ import equinox as eqx
 from typing import Optional
 from cryojax.image import operators as op
 from cryojax.inference import distributions as dist
-from heterogeneity_gym.pose import apply_poses
+# from heterogeneity_gym.pose import apply_poses
 
 
 @eqx.filter_vmap(  # Over structures
@@ -31,7 +31,7 @@ from heterogeneity_gym.pose import apply_poses
         None,
         None,
         0,
-        0
+        0,
         eqx.if_array(0),
         eqx.if_array(0),
         eqx.if_array(0),
@@ -53,8 +53,8 @@ def _calculate_likelihood( # TODO: fix order
     pixel_size,
     voltage,
 ):
-    atom_positions = apply_poses(atom_positions, poses)
-    pipeline = build_pipeline(
+    # atom_positions = apply_poses(atom_positions, poses)
+    pipeline = _build_pipeline(
         atom_positions,
         atom_identities,
         b_factors,
@@ -89,7 +89,7 @@ def _calculate_likelihood( # TODO: fix order
     )
 )
 
-def _render_clean_images_from_point_atoms(
+def _render_clean_images_from_atoms(
     atom_positions,
     atom_identities,
     b_factors,
@@ -103,7 +103,7 @@ def _render_clean_images_from_point_atoms(
     """
     Renders a centered image
     """
-    distribution = build_pipeline(
+    distribution = _build_pipeline(
         atom_positions,
         atom_identities,
         b_factors,
@@ -146,7 +146,7 @@ def _render_noisy_images_from_atoms(
     """
     Renders a centered image
     """
-    distribution = build_pipeline(
+    distribution = _build_pipeline(
         atom_positions,
         atom_identities,
         b_factors,

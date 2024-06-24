@@ -17,7 +17,7 @@ class TestRenderImagesFromStructures:
         pixel_size = 1.0
         voltage = 300
         noise_strength = 1.0
-        imgs = rendering._render_clean_images_from_structures(
+        imgs = rendering._render_clean_images_from_atoms(
             positions,
             identities,
             b_factors,
@@ -46,7 +46,7 @@ class TestRenderImagesFromStructures:
         voltage = 300
         noise_strength = 1.0
 
-        imgs = rendering._render_noisy_images_from_structures(
+        imgs = rendering._render_noisy_images_from_atoms(
             positions,
             identities,
             b_factors,

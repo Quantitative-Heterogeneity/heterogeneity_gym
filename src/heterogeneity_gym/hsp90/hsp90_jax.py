@@ -45,7 +45,7 @@ class DiscreteClassModel:
         self.astigmatism_range = astigmatism_range
 
         self.structures = atom_positions
-
+        self.identities = identities
         self.volumes = rendering._build_volumes(
             atom_positions,
             identities,
@@ -117,13 +117,41 @@ class DiscreteClassModel:
     # def construct_structures(self, )
 
     def render_images_from_structures(
-        self, structures, noise_std: Optional[float] = None
+        self, atomic_structures, rotations, noise_std: Optional[float] = None
     ):
         """ """
         if noise_std is None:
             noise_std = self.noise_std
 
-        raise NotImplementedError
+        N = len(atomic_structures)
+        # key = np.random.randint(int(1e8), size=N)
+
+        key = jax.random.PRNGKey(0)
+        # TODO: replace with calls to jax random
+        defocus = jnp.array(
+            np.random.uniform(
+                low=self.defocus_range[0], high=self.defocus_range[1], size=N
+            )
+        )
+        astigmatism = jnp.array(
+            np.random.uniform(
+                low=self.astigmatism_range[0], high=self.astigmatism_range[1], size=N
+            )
+        )
+
+        images = rendering._render_noisy_images_from_atoms(
+            atomic_structures,
+            self.identities,
+            rotations,
+            noise_std,
+            defocus,
+            astigmatism,
+            self.img_shape,
+            self.pixel_size,
+            self.voltage,
+            key,
+        )
+        return images, (defocus, astigmatism)
         # expand_structures = structures[..., None, None]  # N x Atom x 2 x 1 x 1
         # sq_displacements = (
         #     expand_structures - self.grid.to(structures)

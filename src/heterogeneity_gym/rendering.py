@@ -12,7 +12,7 @@ from cryojax.inference import distributions as dist
 # from heterogeneity_gym.pose import apply_poses
 
 
-@eqx.filter_vmap(  # Over structures
+@eqx.filter_vmap(  # Over provided potential values
     in_axes=(
         0,
         None,
@@ -41,7 +41,7 @@ from cryojax.inference import distributions as dist
         None,
     )
 )
-def _calculate_likelihood_(  # TODO: we could probably speed this up by building distributions once.
+def _calculate_likelihood_of_atom_structures(  # TODO: we could probably speed this up by building distributions once.
     atom_positions,
     atom_identities,
     b_factors,
@@ -55,7 +55,7 @@ def _calculate_likelihood_(  # TODO: we could probably speed this up by building
     voltage,
 ):
     # atom_positions = apply_poses(atom_positions, poses)
-    pipeline = _build_distribution_from_atoms(
+    distribution = _build_distribution_from_atoms(
         atom_positions,
         atom_identities,
         rotation_as_euler_angle,
@@ -68,12 +68,6 @@ def _calculate_likelihood_(  # TODO: we could probably speed this up by building
         voltage,
     )
 
-    distribution = dist.IndependentGaussianFourierModes(
-        pipeline,
-        variance_function=op.Lorenzian(
-            amplitude=noise_strength**2, length_scale=2.0 * pixel_size
-        ),
-    )
     return distribution.log_likelihood(reference_image)
 
 
@@ -136,7 +130,7 @@ def _render_clean_images_from_atoms(
         None,
     )
 )
-def _render_noisy_images_from_atoms(
+def _render_noisy_images_from_atomi(
     atom_positions,
     atom_identities,
     rotation_as_euler_angle,
@@ -195,6 +189,60 @@ def _build_distribution_from_atoms(
         pixel_size,
         voltage,
     )
+
+
+@eqx.filter_vmap(  # Over provided potential values
+    in_axes=(
+        0,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+)
+@eqx.filter_vmap(  # Over reference images
+    in_axes=(
+        None,
+        0,
+        0,
+        eqx.if_array(0),
+        eqx.if_array(0),
+        eqx.if_array(0),
+        None,
+        None,
+        None,
+    )
+)
+def _calculate_likelihood_of_potential_grid(  # TODO: we could probably speed this up by building distributions once.
+    potential,
+    reference_image,
+    rotation_as_euler_angle,
+    noise_strength,
+    defocus,
+    astigmatism,
+    shape,
+    pixel_size,
+    voltage,
+):
+    # atom_positions = apply_poses(atom_positions, poses)
+    potential_integrator = cxs.FourierSliceExtraction(interpolation_order=1)
+    distribution = _build_distribution_from_potential(
+        potential,
+        potential_integrator,
+        rotation_as_euler_angle,
+        noise_strength,
+        defocus,
+        astigmatism,
+        shape,
+        pixel_size,
+        voltage,
+    )
+
+    return distribution.log_likelihood(reference_image)
 
 
 @eqx.filter_vmap(

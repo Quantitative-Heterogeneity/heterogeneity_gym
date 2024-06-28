@@ -9,6 +9,15 @@ from torch.distributions import MultivariateNormal
 from typing import Tuple, Optional
 import warnings
 
+def rotate(point, theta):
+    """
+    Rotate a collection of 2D points given the angle
+    """
+    mat = torch.stack(
+        [torch.stack([torch.cos(theta), -torch.sin(theta)]),
+         torch.stack([torch.sin(theta), torch.cos(theta)])]
+    ).permute((2, 0, 1))
+    return torch.einsum('...ij,...j->...i', mat, point)
 
 class Latent2DGaussianMixture:
     """
@@ -217,6 +226,8 @@ class RectangleModel:
         """
         Converts a latent distribution on the angles into three-dimensional atomic structures
         """
+        if len(latent_samples.shape) < 2:
+            latent_samples = torch.unsqueeze(latent_samples, 0)
         N = len(latent_samples)
         dtype = latent_samples.dtype
         device = latent_samples.device
@@ -226,6 +237,11 @@ class RectangleModel:
         atom_2 = atom_1 * torch.tensor([1, -1], device=device, dtype=dtype)
         atom_3 = atom_1 * torch.tensor([-1, 1], device=device, dtype=dtype)
         atom_4 = atom_1 * torch.tensor([-1, -1], device=device, dtype=dtype)
+        theta = torch.rand(N) * torch.pi / 2.0 - torch.pi / 4.0
+        atom_1 = rotate(atom_1, theta)
+        atom_2 = rotate(atom_2, theta)
+        atom_3 = rotate(atom_3, theta)
+        atom_4 = rotate(atom_4, theta)
 
         structures = torch.stack([atom_1, atom_2, atom_3, atom_4], dim=-2)
 
@@ -250,8 +266,8 @@ class RectangleModel:
         if noise_std is None:
             noise_std = self.noise_std
 
-        if torch.any(torch.abs(structures) > self.image_size):
-            warnings.warn("One of the structures may have escaped the imaging window")
+#        if torch.any(torch.abs(structures) > self.image_size):
+#            warnings.warn("One of the structures may have escaped the imaging window")
 
         expand_structures = structures[..., None, None]  # N x Atom x 2 x 1 x 1
         sq_displacements = (

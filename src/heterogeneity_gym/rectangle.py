@@ -48,7 +48,7 @@ class Latent2DGaussianMixture:
 
     def log_density(self, length_width: jax.Array) -> float:
         """
-        Returns value of density at length_width.
+        Returns value of log density at length_width.
 
         Parameters
         ----------
@@ -284,6 +284,22 @@ class RectangleModel:
         image = image + random.normal(rng_key, image.shape) * noise_std
         return image
 
+    def log_likelihood(self,
+                       image: jax.Array,
+                       structures: jax.Array,
+                       noise_std: Optional[float] = None):
+        if noise_std is None:
+            noise_std = self.noise_std
+
+        expand_structures = structures[..., None, None]  # N x Atom x 2 x 1 x 1
+        sq_displacements = (
+            expand_structures - self.grid
+        ) ** 2  # N x Atom x 2 x Npix x Npix
+        sq_distances = jnp.sum(sq_displacements, axis=-3)  # ... x Atom x Npix x Npix
+        kernel = jnp.exp(-sq_distances / (2 * self.atom_variance))
+        mean = jnp.sum(kernel, axis=-3)  # ... x Npix x Npix
+        return jnp.sum(jsc.stats.norm.logpdf(image, mean, noise_std))
+
     def evaluate_log_pij_matrix(
         self,
         experimental_images: jax.Array,
@@ -321,8 +337,9 @@ if __name__ == '__main__':
     clean_model = RectangleModel(latent_density, noise_std=0.0,
                                  image_width_in_pixels=image_width_in_pixels, )
 
-    raw_images, _, latent_samples, _ = rectangle_model.sample_images(max_N, rng_key=random.PRNGKey(10))
-    clean_images, _, _, _ = clean_model.sample_images(max_N, rng_key=random.PRNGKey(10))
+    raw_images, structure, latent_samples, _ = rectangle_model.sample_images(max_N, rng_key=random.PRNGKey(10))
+    clean_images, _, _, _ = clean_model.sample_images(max_N, rng_key=random.PRNGKey(10),)
+    print(rectangle_model.log_likelihood(raw_images,structure))
     print("SNR:", jnp.mean(clean_images * clean_images) / noise_std / noise_std)
     fig, axes = plt.subplots(2, 5, sharex=True, sharey=True, figsize=(16, 8))
 

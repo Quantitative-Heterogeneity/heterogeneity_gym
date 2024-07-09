@@ -26,8 +26,8 @@ class Latent2DGaussianMixture:
 
     def __init__(
         self,
-        length_width_means: torch.tensor = torch.tensor([0, 0]),
-        length_width_covariances: torch.tensor = torch.tensor([[1, 0], [0, 1]]),
+        length_width_means: torch.tensor = torch.tensor([[0., 0.]]),
+        length_width_covariances: torch.tensor = torch.tensor([[[1., 0.], [0., 1.]]]),
         length_width_weights: torch.tensor = None,
     ):
         """

@@ -4,6 +4,7 @@ rectangle of varying width and height.  Initial idea for the example
 David Silva Sanchez.  Code by Erik Thiede and Joshua Rhodes
 """
 
+import jax
 import torch
 from torch.distributions import MultivariateNormal
 from typing import Tuple, Optional

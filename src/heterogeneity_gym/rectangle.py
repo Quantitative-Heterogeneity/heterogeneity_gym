@@ -275,7 +275,6 @@ class RectangleModel:
             rng_key = random.PRNGKey(2)
 
         expand_structures = structures[..., None, None]  # N x Atom x 2 x 1 x 1
-        print(expand_structures.shape, self.grid.shape)
         sq_displacements = (
             expand_structures - self.grid
         ) ** 2  # N x Atom x 2 x Npix x Npix

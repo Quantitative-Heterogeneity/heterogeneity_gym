@@ -6,69 +6,12 @@ from typing import Tuple
 import cryojax.simulator as cxs
 import equinox as eqx
 from typing import Optional
+from jaxtyping import Array, Complex, Float
 from cryojax.image import operators as op
 from cryojax.inference import distributions as dist
+from cryojax.coordinates import make_frequency_grid
 
 # from heterogeneity_gym.pose import apply_poses
-
-
-@eqx.filter_vmap(  # Over provided potential values
-    in_axes=(
-        0,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-    )
-)
-@eqx.filter_vmap(  # Over reference images
-    in_axes=(
-        None,
-        None,
-        None,
-        0,
-        0,
-        eqx.if_array(0),
-        eqx.if_array(0),
-        eqx.if_array(0),
-        None,
-        None,
-        None,
-    )
-)
-def _calculate_likelihood_of_atom_structures(  # TODO: we could probably speed this up by building distributions once.
-    atom_positions,
-    atom_identities,
-    b_factors,
-    reference_image,
-    rotation_as_euler_angle,
-    noise_strength,
-    defocus,
-    astigmatism,
-    shape,
-    pixel_size,
-    voltage,
-):
-    # atom_positions = apply_poses(atom_positions, poses)
-    distribution = _build_distribution_from_atoms(
-        atom_positions,
-        atom_identities,
-        rotation_as_euler_angle,
-        b_factors,
-        noise_strength,
-        defocus,
-        astigmatism,
-        shape,
-        pixel_size,
-        voltage,
-    )
-
-    return distribution.log_likelihood(reference_image)
 
 
 @eqx.filter_vmap(
@@ -189,60 +132,6 @@ def _build_distribution_from_atoms(
         pixel_size,
         voltage,
     )
-
-
-@eqx.filter_vmap(  # Over provided potential values
-    in_axes=(
-        0,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-    )
-)
-@eqx.filter_vmap(  # Over reference images
-    in_axes=(
-        None,
-        0,
-        0,
-        eqx.if_array(0),
-        eqx.if_array(0),
-        eqx.if_array(0),
-        None,
-        None,
-        None,
-    )
-)
-def _calculate_likelihood_of_potential_grid(  # TODO: we could probably speed this up by building distributions once.
-    potential,
-    reference_image,
-    rotation_as_euler_angle,
-    noise_strength,
-    defocus,
-    astigmatism,
-    shape,
-    pixel_size,
-    voltage,
-):
-    # atom_positions = apply_poses(atom_positions, poses)
-    potential_integrator = cxs.FourierSliceExtraction(interpolation_order=1)
-    distribution = _build_distribution_from_potential(
-        potential,
-        potential_integrator,
-        rotation_as_euler_angle,
-        noise_strength,
-        defocus,
-        astigmatism,
-        shape,
-        pixel_size,
-        voltage,
-    )
-
-    return distribution.log_likelihood(reference_image)
 
 
 @eqx.filter_vmap(
@@ -435,3 +324,15 @@ def _build_volumes(atom_positions, identities, b_factors, voxel_size, grid_shape
 #     distribution = eqx.tree_at(defocus_return, distribution, defocus)
 #     distribution = eqx.tree_at(astigmatism_return, distribution, astigmatism)
 #     return distribution.sample(key)
+
+
+def evaluate_ctf(defocus_in_angstroms, astigmatism_in_angstroms, shape, pixel_size):
+    frequency_grid = make_frequency_grid(shape, pixel_size)
+
+    transfer_theory = cxs.ContrastTransferTheory(
+        ctf=cxs.ContrastTransferFunction(
+            frequency_grid,
+            defocus_in_angstroms=defocus_in_angstroms,
+            astigmatism_in_angstroms=astigmatism_in_angstroms,
+        )
+    )

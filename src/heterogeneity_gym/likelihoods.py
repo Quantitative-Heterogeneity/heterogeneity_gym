@@ -33,7 +33,7 @@ from cryojax.image._fft import rfftn
         None,
     )
 )
-def _calculate_log_likelihood_of_atom_structures(  # TODO: we could probably speed this up by building distributions once.
+def _calculate_log_likelihood_of_atom_structures(
     atom_positions,
     atom_identities,
     b_factors,

@@ -4,8 +4,9 @@ import jax.numpy as jnp
 from typing import Tuple, Optional
 from scipy.spatial.transform import Rotation
 from cryojax.io import get_atom_info_from_mdtraj
+from heterogeneity_gym import rendering
 from heterogeneity_gym.hsp90.pdbs import _load_hsp90_traj
-import heterogeneity_gym.rendering as rendering
+from heterogeneity_gym.likelihoods import _calculate_log_likelihood_of_atom_structures
 
 
 # TODO: Reparameterize to use SNR instead of noise_std
@@ -19,18 +20,22 @@ class DiscreteClassModel:
         self,
         atom_positions,
         identities,
+        b_factors=None,
         latent_density=None,
         image_width_in_pixels: int = 128,
         pixel_size: float = 1.1,
         defocus_range=(5000.0, 10000.0),
         astigmatism_range=(0, 0),
         voltage_in_kilovolts=300.0,
-        noise_strength=0.0,
+        noise_std=0.0,
     ):
         """
         TODO: we should construct a "default" latent density.
         TODO: Add initialization to device.  How does OpenAI solve device when creating their "environments"?
         """
+        if b_factors is None:
+            b_factors = jnp.ones_like(identities) * 5.0  # Arbitrarily picked
+
         self.grid_shape = (
             image_width_in_pixels,
             image_width_in_pixels,
@@ -38,7 +43,8 @@ class DiscreteClassModel:
         )
         self.img_width = image_width_in_pixels
         self.img_shape = (image_width_in_pixels, image_width_in_pixels)
-        self.noise_strength = noise_strength
+        self.noise_std = noise_std
+
         self.pixel_size = pixel_size
         self.voltage = voltage_in_kilovolts
         self.defocus_range = defocus_range
@@ -46,10 +52,11 @@ class DiscreteClassModel:
 
         self.structures = atom_positions
         self.identities = identities
+        self.b_factors = b_factors
         self.volumes = rendering._build_volumes(
             atom_positions,
             identities,
-            None,
+            self.b_factors,
             pixel_size,
             self.grid_shape,
         )
@@ -152,15 +159,6 @@ class DiscreteClassModel:
             key,
         )
         return images, (defocus, astigmatism)
-        # expand_structures = structures[..., None, None]  # N x Atom x 2 x 1 x 1
-        # sq_displacements = (
-        #     expand_structures - self.grid.to(structures)
-        # ) ** 2  # N x Atom x 2 x Npix x Npix
-        # sq_distances = torch.sum(sq_displacements, dim=-3)  # ... x Atom x Npix x Npix
-        # kernel = torch.exp(-sq_distances / (2 * self.atom_variance))
-        # image = torch.sum(kernel, dim=-3)  # ... x Npix x Npix
-        # image = image + torch.randn_like(image) * noise_std
-        return image, ctfs
 
     def render_images_from_volumes(self, volumes, rotations, noise_std=None):
         if noise_std is None:
@@ -198,12 +196,23 @@ class DiscreteClassModel:
     def evaluate_log_pij_matrix(
         self,
         experimental_images,
-        simulated_images,
+        predicted_atomic_structures,
+        pose_as_euler_angle,
         noise_std: float,
     ):
-        """ """
-        raise NotImplementedError
-        return -1 * difference / (2 * noise_std**2)
+        return _calculate_log_likelihood_of_atom_structures(
+            predicted_atomic_structures,
+            self.identities,
+            self.b_factors,
+            experimental_images,
+            pose_as_euler_angle,
+            noise_std,
+            self.defocus,
+            self.astigmatism,
+            self.img_shape,
+            self.pixel_size,
+            self.voltage,
+        )
 
 
 class HSP90_Model(DiscreteClassModel):
@@ -215,7 +224,7 @@ class HSP90_Model(DiscreteClassModel):
         defocus_range=(5000.0, 10000.0),
         astigmatism_range=(0, 0),
         voltage_in_kilovolts=300.0,
-        noise_strength=0.0,
+        noise_std=0.0,
     ):
         traj = _load_hsp90_traj()
         atom_positions, identities = get_atom_info_from_mdtraj(traj)
@@ -229,5 +238,5 @@ class HSP90_Model(DiscreteClassModel):
             defocus_range=defocus_range,
             astigmatism_range=astigmatism_range,
             voltage_in_kilovolts=voltage_in_kilovolts,
-            noise_strength=noise_strength,
+            noise_std=noise_std,
         )

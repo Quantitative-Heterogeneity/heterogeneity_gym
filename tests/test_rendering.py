@@ -40,7 +40,7 @@ class TestRenderImagesFromAtoms:
         identities = jnp.array(np.ones(8).astype("int")) * 12
         euler_angles = np.random.randn(10, 3)
         key = jax.random.PRNGKey(0)
-        # keys = jax.random.split(key, 8)
+        keys = jax.random.split(key, 10)
 
         b_factors = None
         defocus = 1.0
@@ -61,7 +61,7 @@ class TestRenderImagesFromAtoms:
             shape,
             pixel_size,
             voltage,
-            key,
+            keys,
         )
 
         assert imgs.shape[0] == 10
@@ -115,7 +115,7 @@ class TestRenderImagesFromPotential:
         volumes = _build_grid_potentials()
         euler_angles = np.random.randn(10, 3)
         key = jax.random.PRNGKey(0)
-        # keys = jax.random.split(key, 8)
+        keys = jax.random.split(key, 10)
 
         b_factors = None
         defocus = 1.0
@@ -134,7 +134,7 @@ class TestRenderImagesFromPotential:
             shape,
             pixel_size,
             voltage,
-            key,
+            keys,
         )
 
         assert imgs.shape[0] == 10

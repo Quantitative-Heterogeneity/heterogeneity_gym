@@ -70,10 +70,10 @@ def _render_clean_images_from_atoms(
         None,
         None,
         None,
-        None,
+        eqx.if_array(0),
     )
 )
-def _render_noisy_images_from_atomi(
+def _render_noisy_images_from_atoms(
     atom_positions,
     atom_identities,
     rotation_as_euler_angle,
@@ -187,7 +187,7 @@ def _render_clean_images_from_potential_grid(
         None,
         None,
         None,
-        None,
+        eqx.if_array(0),
     )
 )
 def _render_noisy_images_from_potential_grid(

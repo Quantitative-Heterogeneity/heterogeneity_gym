@@ -24,10 +24,11 @@ class DiscreteClassModel:
         latent_density=None,
         image_width_in_pixels: int = 128,
         pixel_size: float = 1.1,
-        defocus_range=(5000.0, 10000.0),
-        astigmatism_range=(0, 0),
-        voltage_in_kilovolts=300.0,
-        noise_std=0.0,
+        defocus_range: Tuple[float, float] = (5000.0, 10000.0),
+        astigmatism_range: Tuple[float, float] = (0.0, 0.0),
+        voltage_in_kilovolts: float = 300.0,
+        noise_std: float = 0.0,
+        seed: int = 0,
     ):
         """
         TODO: we should construct a "default" latent density.
@@ -62,6 +63,7 @@ class DiscreteClassModel:
         )
 
         self.latent_density = latent_density
+        self.key = jax.random.PRNGKey(seed)
 
     def evaluate_latent_density(self, x):
         """
@@ -131,9 +133,7 @@ class DiscreteClassModel:
             noise_std = self.noise_std
 
         N = len(atomic_structures)
-        # key = np.random.randint(int(1e8), size=N)
 
-        key = jax.random.PRNGKey(0)
         # TODO: replace with calls to jax random
         defocus = jnp.array(
             np.random.uniform(
@@ -145,6 +145,7 @@ class DiscreteClassModel:
                 low=self.astigmatism_range[0], high=self.astigmatism_range[1], size=N
             )
         )
+        new_keys = jax.random.split(self.key, N + 1)
 
         images = rendering._render_noisy_images_from_atoms(
             atomic_structures,
@@ -156,8 +157,10 @@ class DiscreteClassModel:
             self.img_shape,
             self.pixel_size,
             self.voltage,
-            key,
+            new_keys[:N],
         )
+        self.key = new_keys[-1]
+
         return images, (defocus, astigmatism)
 
     def render_images_from_volumes(self, volumes, rotations, noise_std=None):
@@ -165,9 +168,7 @@ class DiscreteClassModel:
             noise_std = self.noise_std
 
         N = len(volumes)
-        # key = np.random.randint(int(1e8), size=N)
 
-        key = jax.random.PRNGKey(0)
         # TODO: replace with calls to jax random
         defocus = jnp.array(
             np.random.uniform(
@@ -180,6 +181,7 @@ class DiscreteClassModel:
             )
         )
 
+        new_keys = jax.random.split(self.key, N + 1)
         images = rendering._render_noisy_images_from_potential_grid(
             volumes,
             rotations,
@@ -189,8 +191,9 @@ class DiscreteClassModel:
             self.img_shape,
             self.pixel_size,
             self.voltage,
-            key,
+            new_keys[:N],
         )
+        self.key = new_keys[-1]
         return images, (defocus, astigmatism)
 
     def evaluate_log_pij_matrix(

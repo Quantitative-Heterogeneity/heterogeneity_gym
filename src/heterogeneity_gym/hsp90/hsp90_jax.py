@@ -123,6 +123,22 @@ class DiscreteClassModel:
         # images, ctfs render_random_image(rotations, self.cjx_ensemble)
         return images, structures, poses, ctfs
 
+    def render_projections_from_latent(self, latent_samples, poses=None):
+        if poses is None:
+            rotations = Rotation.random(len(latent_samples)).as_euler(seq="ZYZ")
+            # rotations *= 180.0 / np.pi
+            poses = np.zeros((len(latent_samples), 6))
+            poses[:, 3:] += rotations
+            poses = jnp.array(poses)
+
+        volumes = self.volumes[latent_samples]
+        structures = self.structures[latent_samples]
+        images = rendering._render_projections_from_potential_grid(
+            volumes, poses, self.img_shape, self.pixel_size, self.voltage
+        )
+        # images, ctfs render_random_image(rotations, self.cjx_ensemble)
+        return images, structures, poses
+
     # def construct_structures(self, )
 
     def render_images_from_structures(
@@ -227,7 +243,8 @@ class HSP90_Model(DiscreteClassModel):
         defocus_range=(5000.0, 10000.0),
         astigmatism_range=(0, 0),
         voltage_in_kilovolts=300.0,
-        noise_std=0.0,
+        noise_std: float = 0.0,
+        seed: int = 0,
     ):
         traj = _load_hsp90_traj()
         atom_positions, identities = get_atom_info_from_mdtraj(traj)
@@ -242,4 +259,5 @@ class HSP90_Model(DiscreteClassModel):
             astigmatism_range=astigmatism_range,
             voltage_in_kilovolts=voltage_in_kilovolts,
             noise_std=noise_std,
+            seed=seed,
         )

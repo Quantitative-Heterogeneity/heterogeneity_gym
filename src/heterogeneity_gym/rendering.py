@@ -10,6 +10,7 @@ from jaxtyping import Array, Complex, Float
 from cryojax.image import operators as op
 from cryojax.inference import distributions as dist
 from cryojax.coordinates import make_frequency_grid
+from cryojax.image import irfftn
 
 # from heterogeneity_gym.pose import apply_poses
 
@@ -31,7 +32,7 @@ from cryojax.coordinates import make_frequency_grid
 def _render_clean_images_from_atoms(
     atom_positions,
     atom_identities,
-    rotation_as_euler_angle,
+    euler_angle_pose,
     b_factors,
     noise_strength,
     defocus,
@@ -46,7 +47,7 @@ def _render_clean_images_from_atoms(
     distribution = _build_distribution_from_atoms(
         atom_positions,
         atom_identities,
-        rotation_as_euler_angle,
+        euler_angle_pose,
         b_factors,
         noise_strength,
         defocus,
@@ -76,7 +77,7 @@ def _render_clean_images_from_atoms(
 def _render_noisy_images_from_atoms(
     atom_positions,
     atom_identities,
-    rotation_as_euler_angle,
+    euler_angle_pose,
     b_factors,
     noise_strength,
     defocus,
@@ -92,7 +93,7 @@ def _render_noisy_images_from_atoms(
     distribution = _build_distribution_from_atoms(
         atom_positions,
         atom_identities,
-        rotation_as_euler_angle,
+        euler_angle_pose,
         b_factors,
         noise_strength,
         defocus,
@@ -108,7 +109,7 @@ def _render_noisy_images_from_atoms(
 def _build_distribution_from_atoms(
     atom_positions,
     atom_identities,
-    rotation_as_euler_angle,
+    euler_angle_pose,
     b_factors,
     noise_strength,
     defocus,
@@ -124,7 +125,7 @@ def _build_distribution_from_atoms(
     return _build_distribution_from_potential(
         potential,
         potential_integrator,
-        rotation_as_euler_angle,
+        euler_angle_pose,
         noise_strength,
         defocus,
         astigmatism,
@@ -148,7 +149,7 @@ def _build_distribution_from_atoms(
 )
 def _render_clean_images_from_potential_grid(
     real_space_potential_grid,
-    rotation_as_euler_angle,
+    euler_angle_pose,
     noise_strength,
     defocus,
     astigmatism,
@@ -166,7 +167,7 @@ def _render_clean_images_from_potential_grid(
     distribution = _build_distribution_from_potential(
         potential,
         potential_integrator,
-        rotation_as_euler_angle,
+        euler_angle_pose,
         noise_strength,
         defocus,
         astigmatism,
@@ -192,7 +193,7 @@ def _render_clean_images_from_potential_grid(
 )
 def _render_noisy_images_from_potential_grid(
     real_space_potential_grid,
-    rotation_as_euler_angle,
+    euler_angle_pose,
     noise_strength,
     defocus,
     astigmatism,
@@ -211,7 +212,7 @@ def _render_noisy_images_from_potential_grid(
     distribution = _build_distribution_from_potential(
         potential,
         potential_integrator,
-        rotation_as_euler_angle,
+        euler_angle_pose,
         noise_strength,
         defocus,
         astigmatism,
@@ -222,14 +223,21 @@ def _render_noisy_images_from_potential_grid(
     return distribution.sample(key)
 
 
-# @eqx.filter_jit
-# def _build_atom_
-
-
-def _build_distribution_from_potential(
-    potential,
-    potential_integrator,
-    rotation_as_euler_angle,
+@eqx.filter_vmap(
+    in_axes=(
+        0,
+        0,
+        eqx.if_array(0),
+        eqx.if_array(0),
+        eqx.if_array(0),
+        None,
+        None,
+        None,
+    )
+)
+def _render_clean_images_from_potential_grid(
+    real_space_potential_grid,
+    euler_angle_pose,
     noise_strength,
     defocus,
     astigmatism,
@@ -237,7 +245,78 @@ def _build_distribution_from_potential(
     pixel_size,
     voltage,
 ):
-    pose = cxs.EulerAnglePose(*rotation_as_euler_angle)
+    """
+    Renders a centered image
+    """
+    potential = cxs.FourierVoxelGridPotential.from_real_voxel_grid(
+        real_space_potential_grid, pixel_size, pad_scale=2
+    )
+    potential_integrator = cxs.FourierSliceExtraction(interpolation_order=1)
+    distribution = _build_distribution_from_potential(
+        potential,
+        potential_integrator,
+        euler_angle_pose,
+        noise_strength,
+        defocus,
+        astigmatism,
+        shape,
+        pixel_size,
+        voltage,
+    )
+    return distribution.compute_signal()
+
+
+@eqx.filter_vmap(
+    in_axes=(
+        0,
+        0,
+        None,
+        None,
+        None,
+    )
+)
+def _render_projections_from_potential_grid(
+    real_space_potential_grid,
+    euler_angle_pose,
+    shape,
+    pixel_size,
+    voltage,
+):
+    """
+    Renders a centered image
+    """
+    pose = cxs.EulerAnglePose(*euler_angle_pose)
+    potential = cxs.FourierVoxelGridPotential.from_real_voxel_grid(
+        real_space_potential_grid, pixel_size, pad_scale=2
+    )
+    potential_integrator = cxs.FourierSliceExtraction(interpolation_order=1)
+    instrument_config = cxs.InstrumentConfig(
+        shape=shape,
+        pixel_size=pixel_size,
+        voltage_in_kilovolts=voltage,
+    )
+
+    # ... compute the integrated potential
+    fourier_integrated_potential = (
+        potential_integrator.compute_fourier_integrated_potential(
+            potential.rotate_to_pose(pose), instrument_config
+        )
+    )
+    return irfftn(fourier_integrated_potential, s=instrument_config.shape)
+
+
+def _build_distribution_from_potential(
+    potential,
+    potential_integrator,
+    euler_angle_pose,
+    noise_strength,
+    defocus,
+    astigmatism,
+    shape,
+    pixel_size,
+    voltage,
+):
+    pose = cxs.EulerAnglePose(*euler_angle_pose)
     structural_ensemble = cxs.SingleStructureEnsemble(potential, pose)
     # potential_integrator = cxs.GaussianMixtureProjection()
     transfer_theory = cxs.ContrastTransferTheory(
@@ -284,46 +363,6 @@ def _build_volumes(atom_positions, identities, b_factors, voxel_size, grid_shape
     )
 
     return grid_potential
-
-
-# class DiscreteDistributionRenderer:
-#     def __init__(self, distribution: dist.AbstractDistribution):
-#         self.distribution = distribution
-
-#     def render_random_projection(self, rotation, latent_code, defocus: float, astigmatism: float, key: float):
-
-
-# @eqx.filter_vmap(  # Over structures
-#     in_axes=(
-#         None,
-#         0,
-#         0,
-#         0,
-#         0,
-#         0,
-#     )
-# )
-# def render_random_projection(
-#     distribution, rotation, latent_code, defocus: float, astigmatism: float, key: float
-# ):
-#     new_pose = cxs.EulerAnglePose(rotation)
-#     pose_return = (
-#         lambda x: x.imaging_pipeline.scattering_theory.structural_ensemble.pose
-#     )
-#     conf_return = (
-#         lambda x: x.imaging_pipeline.scattering_theory.structural_ensemble.conformation
-#     )
-#     defocus_return = (
-#         lambda x: x.imaging_pipeline.scattering_theory.structural_ensemble.conformation
-#     )
-#     astigmatism_return = (
-#         lambda x: x.imaging_pipeline.scattering_theory.structural_ensemble.conformation
-#     )
-#     distribution = eqx.tree_at(pose_return, distribution, new_pose)
-#     distribution = eqx.tree_at(conf_return, distribution, latent_code)
-#     distribution = eqx.tree_at(defocus_return, distribution, defocus)
-#     distribution = eqx.tree_at(astigmatism_return, distribution, astigmatism)
-#     return distribution.sample(key)
 
 
 def evaluate_ctf(defocus_in_angstroms, astigmatism_in_angstroms, shape, pixel_size):

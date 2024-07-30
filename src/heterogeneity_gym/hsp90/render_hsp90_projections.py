@@ -89,8 +89,9 @@ def main():
     args = parse_args()
 
     poses = generate_icosahedral_poses(args.nu, args.n_theta)
-    print(f"Rendering a total of {poses} poses".)
-    latent_code = jnp.ones(len(poses), dtype="int32") * args.latent
+    num_images = len(poses)
+    print(f"Rendering a total of {num_images} poses.")
+    latent_code = jnp.ones(num_images, dtype="int32") * args.latent
     # Render Images
     model = hsp90.HSP90_Model(
         defocus_range=(1000, 2000),
@@ -100,7 +101,6 @@ def main():
         seed=0,
     )
 
-    num_images = len(poses)
 
     # Output Folder
     output_folder = setup_output_folder(args.output_folder)

@@ -138,6 +138,7 @@ class RectangleModel:
         image_width_in_pixels=128,
         image_size=4,
         noise_std=0.0,
+        atom_variance=0.04, # standard deviation of 0.2
         device="cpu",
     ):
         """
@@ -162,7 +163,7 @@ class RectangleModel:
         self.latent_density = latent_density
 
         # Atom parameters...
-        self.atom_variance = 0.04  # standard deviation of 0.2
+        self.atom_variance = atom_variance  
         self.image_size = image_size
 
         # Build the imaging grid
